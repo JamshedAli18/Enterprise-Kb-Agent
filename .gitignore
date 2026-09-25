@@ -1,0 +1,10 @@
+﻿backend/venv/
+backend/.venv/
+**/__pycache__/
+*.pyc
+backend/.env
+backend/voice_test_output.mp3
+backend/voice_chat_answer_1.mp3
+backend/voice_chat_answer_2.mp3
+node_modules/
+.DS_Store

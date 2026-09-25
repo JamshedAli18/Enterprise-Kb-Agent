@@ -1,0 +1,12 @@
+﻿fastapi
+uvicorn[standard]
+langchain
+langgraph
+langchain-mcp-adapters
+mcp
+pinecone
+cohere
+google-genai
+groq
+python-dotenv
+httpx
