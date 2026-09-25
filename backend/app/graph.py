@@ -12,12 +12,19 @@ Multi-turn conversation memory via LangGraph checkpointing: GraphState has a
 record_turn appends each (question, answer) pair; routing and synthesis
 prompts both receive recent history so follow-ups can resolve references.
 
-v4 fix: load_tools() now explicitly passes "env": dict(os.environ) to each
-spawned MCP server subprocess. Without this, the subprocess's environment
-depends on the underlying library's default inheritance behavior, which
-worked locally on Windows but left COHERE_API_KEY (and the other keys) out
-entirely inside a Docker container, crashing every MCP server at startup.
-Passing the environment explicitly makes this deterministic across platforms.
+v5 fix: a live test against the deployed Render instance caught the router
+occasionally returning "slacks" instead of "slack" in the sources list. That
+silently failed an exact-string lookup against SOURCE_TO_TOOL, dropping the
+source entirely with no error -- the answer came back grounded but
+incomplete (missing real Slack context) instead of loudly wrong. Fixed with
+normalize_source() as a safety net (handles case/whitespace/simple plurals),
+plus a stricter instruction in the routing prompt to reduce how often this
+happens at the source.
+
+v4 fix (kept): load_tools() explicitly passes "env": dict(os.environ) to
+each spawned MCP server subprocess -- required for the subprocess to see
+COHERE_API_KEY etc. consistently across platforms (this broke silently
+inside Docker even though it worked on Windows directly).
 
 Run directly for a smoke test:
     python app/graph.py
@@ -33,7 +40,7 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import Annotated, Optional, TypedDict
 
 from dotenv import load_dotenv
 from google import genai
@@ -60,6 +67,8 @@ MAX_HISTORY_TURNS = 3
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 groq_client = Groq(api_key=GROQ_API_KEY)
 
+VALID_SOURCES = ("slack", "notion", "drive")
+
 SOURCE_TO_TOOL = {
     "slack": "search_slack",
     "notion": "search_notion",
@@ -71,6 +80,21 @@ BASE_DIR = Path(__file__).resolve().parent  # backend/app/
 
 def server_path(name: str) -> str:
     return str(BASE_DIR / "mcp_servers" / f"{name}_server.py")
+
+
+def normalize_source(name) -> Optional[str]:
+    """Maps a router-provided source name back to one of VALID_SOURCES,
+    tolerating case differences, whitespace, and simple plural slips
+    (e.g. "slacks" -> "slack") instead of silently dropping the source."""
+    if not isinstance(name, str):
+        return None
+    candidate = name.strip().lower()
+    if candidate in VALID_SOURCES:
+        return candidate
+    for valid in VALID_SOURCES:
+        if candidate.startswith(valid):
+            return valid
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +138,10 @@ Known slack channels: pricing, engineering, general, hr, support, product, incid
 Notion pages are matched by title (e.g. "Parental Leave Policy", "PTO Policy",
 "Remote Work Policy", "Security Policy", "Incident Response Runbook", etc.)
 Drive folders: Sales, HR, Engineering, Security, Marketing, Legal
+
+The "sources" list must contain ONLY these exact lowercase strings:
+"slack", "notion", "drive" -- singular, no other spelling or variant
+(not "slacks", not "Slack", not "slack channel").
 
 Date filter rules (important):
 - Only set date_from/date_to when the question names an explicit date, week,
@@ -302,7 +330,12 @@ def make_retrieve_node(tools_by_name):
     async def retrieve_node(state: GraphState) -> dict:
         t0 = time.time()
         decision = state["decision"]
-        sources = decision.get("sources", [])
+        raw_sources = decision.get("sources", [])
+        sources = []
+        for s in raw_sources:
+            normalized = normalize_source(s)
+            if normalized and normalized not in sources:
+                sources.append(normalized)
         per_source_filters = {s: clean_filters(decision.get("filters", {}).get(s)) for s in sources}
         tasks = [fetch_source(tools_by_name, s, state["question"], per_source_filters[s]) for s in sources]
         results = await asyncio.gather(*tasks) if tasks else []
@@ -374,6 +407,17 @@ async def create_app_graph():
 # Smoke test
 # ---------------------------------------------------------------------------
 
+def _self_test_normalize_source():
+    cases = {
+        "slack": "slack", "Slack": "slack", " slacks ": "slack", "SLACKS": "slack",
+        "notion": "notion", "drive": "drive", "gibberish": None, 123: None,
+    }
+    for raw, expected in cases.items():
+        actual = normalize_source(raw)
+        assert actual == expected, f"normalize_source({raw!r}) = {actual!r}, expected {expected!r}"
+    print("normalize_source self-test: PASS")
+
+
 async def run_streaming(graph, question: str, thread_id: str):
     print(f"\n{'=' * 70}\n[thread={thread_id}] QUESTION: {question}\n{'=' * 70}")
     final_state = {}
@@ -396,6 +440,8 @@ async def run_streaming(graph, question: str, thread_id: str):
 
 
 async def main():
+    _self_test_normalize_source()
+
     print("Loading MCP tools and building graph...")
     tools_by_name = await load_tools()
     checkpointer = MemorySaver()
