@@ -21,6 +21,7 @@ import {
 import { GithubMark, Wordmark } from "@/components/brand";
 import { Capabilities } from "@/components/home/capabilities";
 import { Footer } from "@/components/home/footer";
+import { Overview } from "@/components/home/overview";
 import { TechStack } from "@/components/home/tech-stack";
 import { Reveal } from "@/components/reveal";
 import { GITHUB_URL } from "@/lib/config";
@@ -232,56 +233,6 @@ function SectionHeading({
         </p>
       )}
     </div>
-  );
-}
-
-const SOURCES = [
-  {
-    icon: Hash,
-    name: "Slack",
-    body: "Channel conversations, release notes and incident threads — filterable by channel and date.",
-  },
-  {
-    icon: FileText,
-    name: "Notion",
-    body: "Policies, handbooks and wiki pages — the canonical written record of how the company works.",
-  },
-  {
-    icon: HardDrive,
-    name: "Google Drive",
-    body: "Decks, docs and spreadsheets — filterable by folder and file type.",
-  },
-];
-
-function Overview() {
-  return (
-    <section id="overview" className="scroll-mt-16 border-t border-line">
-      <div className="mx-auto max-w-6xl px-5 py-24 sm:px-8 sm:py-32">
-        <Reveal>
-          <SectionHeading
-            eyebrow="Overview"
-            title="A single assistant for knowledge scattered across tools."
-            body="Company knowledge lives in chat threads, wiki pages and shared drives. Instead of searching each one, ask a question in plain language. A supervisor agent decides which sources are relevant, specialist retrievers search them in parallel, and a language model writes one answer grounded in what was found."
-          />
-        </Reveal>
-        <Reveal delay={120}>
-          <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-3">
-            {SOURCES.map(({ icon: Icon, name, body }) => (
-              <div
-                key={name}
-                className="group bg-surface p-8 transition-colors duration-500 hover:bg-background"
-              >
-                <span className="flex size-10 items-center justify-center rounded-xl border border-line transition-all duration-500 group-hover:-translate-y-0.5 group-hover:border-accent group-hover:bg-accent group-hover:text-white">
-                  <Icon className="size-[18px]" strokeWidth={1.75} />
-                </span>
-                <h3 className="mt-6 text-lg font-semibold">{name}</h3>
-                <p className="mt-2 leading-relaxed text-muted">{body}</p>
-              </div>
-            ))}
-          </div>
-        </Reveal>
-      </div>
-    </section>
   );
 }
 
