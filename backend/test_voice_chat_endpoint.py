@@ -1,21 +1,20 @@
 ﻿"""
-End-to-end test for /voice-chat: audio in, transcript + streamed text +
-spoken answer out. Since there's no microphone here, this synthesizes the
-spoken *question* itself (via Deepgram, reusing app/voice.py) and uploads it
-to the running server as if it came from a mic. Verifies: transcript
-accuracy, streamed answer text (same graph as /chat), and the returned
-spoken answer audio. Also does a voice follow-up reusing the same
-thread_id, to confirm multi-turn memory works through the voice endpoint.
+End-to-end test for /voice-chat, configurable to run against local or a
+deployed server. Synthesizes the spoken question itself (via Deepgram,
+reusing app/voice.py locally) since there's no microphone here, uploads it,
+and verifies the transcript, streamed answer, and returned spoken answer.
 
-Requires the server from app/main.py to already be running:
-    uvicorn app.main:app --reload
+Run against local dev server / local Docker container (default):
+    python test_voice_chat_endpoint.py
 
-Run (from the backend/ directory):
+Run against a deployed server:
+    $env:API_BASE_URL = "https://enterprise-kb-agent.onrender.com"
     python test_voice_chat_endpoint.py
 """
 
 import base64
 import json
+import os
 import time
 from typing import Optional
 
@@ -23,7 +22,7 @@ import httpx
 
 from app.voice import synthesize_speech_bytes
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8000")
 
 
 def ask_by_voice(question_text: str, thread_id: Optional[str] = None, save_answer_as: str = "voice_chat_answer.mp3"):
@@ -42,7 +41,7 @@ def ask_by_voice(question_text: str, thread_id: Optional[str] = None, save_answe
     full_text = ""
     meta = None
 
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=90.0) as client:
         with client.stream("POST", f"{BASE_URL}/voice-chat", files=files, data=data) as response:
             response.raise_for_status()
             event_type = None
@@ -59,6 +58,9 @@ def ask_by_voice(question_text: str, thread_id: Optional[str] = None, save_answe
                         event_type = None
                     elif event_type == "done":
                         meta = payload
+                        event_type = None
+                    elif event_type == "error":
+                        print(f"\n[SERVER ERROR] {payload.get('type')}: {payload.get('message')}")
                         event_type = None
                     else:
                         token = payload.get("token", "")
@@ -91,7 +93,7 @@ def ask_by_voice(question_text: str, thread_id: Optional[str] = None, save_answe
 
 
 def main():
-    print("### Part 1: voice question, then voice follow-up in the same thread ###")
+    print(f"Testing against: {BASE_URL}")
     thread_id, _ = ask_by_voice(
         "What is our parental leave policy?",
         save_answer_as="voice_chat_answer_1.mp3",
